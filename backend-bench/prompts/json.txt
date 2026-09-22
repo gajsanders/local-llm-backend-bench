@@ -1,0 +1,39 @@
+Return ONLY valid JSON. Do not use Markdown fences.
+
+Analyze the following Python function:
+
+def retry_request(fn, retries=3, delay=1):
+    for attempt in range(retries):
+        try:
+            return fn()
+        except Exception:
+            time.sleep(delay)
+    return None
+
+Return an object with exactly this schema:
+
+{
+  "bugs": [
+    {
+      "name": "string",
+      "severity": "low|medium|high",
+      "explanation": "string"
+    }
+  ],
+  "recommended_changes": [
+    "string"
+  ],
+  "tests": [
+    {
+      "name": "string",
+      "purpose": "string"
+    }
+  ],
+  "replacement_code": "string"
+}
+
+Requirements:
+- Identify at least 4 issues.
+- Include exactly 5 tests.
+- replacement_code must contain a complete corrected Python implementation.
+- Output must parse as strict JSON.

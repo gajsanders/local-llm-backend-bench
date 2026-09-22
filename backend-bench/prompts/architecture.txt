@@ -1,0 +1,35 @@
+You are reviewing the architecture of a production Python service.
+
+The service processes financial events through this pipeline:
+
+1. CSV/API adapters normalize raw events into an Event schema.
+2. Feature builders derive account-level and temporal features.
+3. A graph builder constructs temporal entity relationships.
+4. Multiple models consume the resulting representations:
+   - XGBoost baseline
+   - GRU sequence model
+   - graph-temporal neural model
+5. Experiments write predictions, metrics, configuration, and provenance artifacts.
+6. Evaluation emphasizes low false-positive rates and cold-start performance.
+
+The current implementation has grown organically. Different experiment runners duplicate:
+- dataset splitting
+- feature preparation
+- artifact writing
+- metric calculation
+- device selection
+- model lifecycle logic
+
+Some feature builders also know about model-specific requirements.
+
+Review this design.
+
+Return:
+1. The five most important architectural problems.
+2. A proposed target architecture with clear layer boundaries.
+3. Which abstractions should be shared and which should remain model-specific.
+4. A suggested Python package/module structure.
+5. A migration strategy that minimizes regression risk.
+6. Three architectural decisions that should explicitly NOT be generalized yet.
+
+Be specific and pragmatic. Avoid generic software-engineering advice.

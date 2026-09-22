@@ -1,0 +1,28 @@
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Generated benchmark results
+backend-bench/results/*
+!backend-bench/results/.gitkeep
+
+# Generated manifests/reports
+backend-bench/current-batch.json
+backend-bench/quality-results.json
+
+# Logs
+*.log
+
+# Model files
+*.safetensors
+*.gguf
+*.mlx
+
+# Local/editor files
+.vscode/
+.idea/

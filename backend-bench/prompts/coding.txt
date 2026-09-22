@@ -1,0 +1,23 @@
+You are reviewing production Python code.
+
+Analyze the following function for:
+1. correctness bugs
+2. edge cases
+3. performance issues
+4. maintainability concerns
+5. a better implementation
+
+Return:
+- a concise diagnosis
+- a corrected implementation
+- 5 focused tests
+
+Code:
+
+def rolling_average(values, window):
+    result = []
+    for i in range(len(values)):
+        start = max(0, i - window)
+        chunk = values[start:i]
+        result.append(sum(chunk) / len(chunk))
+    return result
