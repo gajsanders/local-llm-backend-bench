@@ -20,24 +20,30 @@ for cmd in python3 curl lsof vm_stat; do
 done
 
 BACKEND="${1:-}"
+# Process state used by cleanup.
+SERVER_PID=""
+LOG_PID=""
+STARTED_LMS_SERVER=0
+CLEANED=0
 
 case "$BACKEND" in
-    vmlx|lmstudio)
+    vmlx-simple|vmlx-continuous|lmstudio)
         ;;
     *)
         echo "Usage:"
-        echo "  ./backend-bench/scripts/bench.sh vmlx [prompt]"
+        echo "  ./backend-bench/scripts/bench.sh vmlx-simple [prompt]"
+        echo "  ./backend-bench/scripts/bench.sh vmlx-continuous [prompt]"
         echo "  ./backend-bench/scripts/bench.sh lmstudio [prompt]"
         exit 2
         ;;
 esac
 
 # Check backend-specific CLI only when needed.
-if [[ "$BACKEND" == "vmlx" ]]; then
-    if ! command -v vmlx >/dev/null 2>&1; then
-        echo "ERROR: vmlx not found on PATH."
-        echo "Install/configure vMLX, or add its binary directory to PATH."
-        exit 1
+if [[ "$BACKEND" == vmlx-* ]]; then
+    if [[ -n "$SERVER_PID" ]] && kill -0 "$SERVER_PID" 2>/dev/null; then
+        echo "Stopping vMLX..."
+        kill "$SERVER_PID" 2>/dev/null
+        wait "$SERVER_PID" 2>/dev/null
     fi
 fi
 
@@ -74,36 +80,31 @@ RUN_DIR="$ROOT/results/${STAMP}-${BACKEND}-${PROMPT_NAME}"
 
 mkdir -p "$RUN_DIR"
 
-SERVER_PID=""
-LOG_PID=""
-STARTED_LMS_SERVER=0
-CLEANED=0
-
 cleanup() {
-    [[ "$CLEANED" == "1" ]] && return
+    [[ "${CLEANED:-0}" == "1" ]] && return
     CLEANED=1
 
     (
         set +e
 
-        if [[ -n "$LOG_PID" ]] && kill -0 "$LOG_PID" 2>/dev/null; then
-            kill "$LOG_PID" 2>/dev/null
-            wait "$LOG_PID" 2>/dev/null
+        if [[ -n "${LOG_PID:-}" ]] && kill -0 "${LOG_PID}" 2>/dev/null; then
+            kill "${LOG_PID}" 2>/dev/null
+            wait "${LOG_PID}" 2>/dev/null
         fi
 
-        if [[ "$BACKEND" == "vmlx" ]]; then
-            if [[ -n "$SERVER_PID" ]] && kill -0 "$SERVER_PID" 2>/dev/null; then
+        if [[ "${BACKEND:-}" == vmlx-* ]]; then
+            if [[ -n "${SERVER_PID:-}" ]] && kill -0 "${SERVER_PID}" 2>/dev/null; then
                 echo "Stopping vMLX..."
-                kill "$SERVER_PID" 2>/dev/null
-                wait "$SERVER_PID" 2>/dev/null
+                kill "${SERVER_PID}" 2>/dev/null
+                wait "${SERVER_PID}" 2>/dev/null
             fi
         fi
 
-        if [[ "$BACKEND" == "lmstudio" ]]; then
+        if [[ "${BACKEND:-}" == "lmstudio" ]]; then
             echo "Unloading LM Studio benchmark model..."
             lms unload --all >/dev/null 2>&1 || true
 
-            if [[ "$STARTED_LMS_SERVER" == "1" ]]; then
+            if [[ "${STARTED_LMS_SERVER:-0}" == "1" ]]; then
                 echo "Stopping LM Studio server..."
                 lms server stop >/dev/null 2>&1 || true
             fi
@@ -150,7 +151,7 @@ print(time.time())
 PY
 )"
 
-if [[ "$BACKEND" == "vmlx" ]]; then
+if [[ "$BACKEND" == vmlx-* ]]; then
 
     PORT=8000
     BASE_URL="http://127.0.0.1:8000/v1"
@@ -163,13 +164,33 @@ if [[ "$BACKEND" == "vmlx" ]]; then
 
     TEMPLATE="$(cat "$MODEL_DIR/chat_template.jinja")"
 
-    echo "Starting vMLX..."
+    VMLX_MODE_ARGS=()
+
+    case "$BACKEND" in
+        vmlx-simple)
+            VMLX_MODE_ARGS=(
+                --no-continuous-batching
+            )
+            ;;
+
+        vmlx-continuous)
+            VMLX_MODE_ARGS=(
+                --continuous-batching
+                --max-num-seqs 1
+                --disable-prefix-cache
+                --no-paged-cache
+                --disable-block-disk-cache
+            )
+            ;;
+    esac
+
+    echo "Starting vMLX profile: $BACKEND"
 
     vmlx serve "$MODEL_DIR" \
         --host 127.0.0.1 \
         --port "$PORT" \
         --max-prompt-tokens 65536 \
-        --no-continuous-batching \
+        "${VMLX_MODE_ARGS[@]}" \
         --reasoning-parser none \
         --chat-template "$TEMPLATE" \
         --chat-template-kwargs '{"enable_thinking": false}' \
@@ -358,6 +379,7 @@ sleep 1
 python3 - \
     "$RUN_DIR" \
     "$BACKEND" \
+    "$PROMPT_NAME" \
     "$LOAD_SECONDS" \
     "$GEN_SECONDS" <<'PY'
 import json
@@ -367,8 +389,9 @@ from pathlib import Path
 
 run = Path(sys.argv[1])
 backend = sys.argv[2]
-load_seconds = float(sys.argv[3])
-generation_seconds = float(sys.argv[4])
+prompt = sys.argv[3]
+load_seconds = float(sys.argv[4])
+generation_seconds = float(sys.argv[5])
 
 response = json.loads((run / "response.json").read_text())
 
@@ -437,6 +460,7 @@ backend_tps = [
 
 summary = {
     "backend": backend,
+    "prompt": prompt,
     "load_seconds": load_seconds,
     "generation_wall_seconds": generation_seconds,
     "prompt_tokens": prompt_tokens,

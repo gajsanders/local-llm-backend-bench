@@ -112,6 +112,22 @@ On this benchmark, vMLX delivered approximately **11–15% higher median generat
 
 Cold loading was also generally faster with vMLX, although load time showed more run-to-run variation than generation throughput.
 
+## Current Findings
+
+The experiments completed so far indicate that **vMLX using its direct/simple
+single-request engine is the current best baseline** for Qwen3-Coder-Next MLX
+6-bit on the tested M4 Max 128 GB system.
+
+- vMLX was approximately **11–15% faster than LM Studio** across the initial
+  architecture, coding, and JSON workloads.
+- Within vMLX, the direct engine was approximately **12% faster at median
+  decode throughput** than continuous batching when cache reuse was disabled.
+- No meaningful output-quality disadvantage was observed for vMLX in the
+  current deterministic task checks.
+
+See [Benchmark Findings So Far](docs/findings-so-far.md) for the full results
+and methodology.
+
 ## Requirements
 
 - Apple Silicon Mac
