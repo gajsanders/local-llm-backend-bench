@@ -216,3 +216,132 @@ Compared with LM Studio, vMLX was approximately 11–15% faster in median genera
 Within vMLX, the direct engine was approximately 12% faster at median decode throughput than continuous batching when cache reuse was disabled.
 
 This configuration therefore remains the reference baseline for subsequent optimization experiments.
+
+## PLD experiment — Qwen3-Coder-Next / vMLX
+
+**Date:** 2026-09-23
+
+### Question
+
+Can vMLX Prompt Lookup Decoding (PLD) improve single-request coding throughput for Qwen3-Coder-Next MLX 6-bit?
+
+### Setup
+
+The baseline continuous-batching profile used:
+
+```text
+--continuous-batching
+--max-num-seqs 1
+--disable-prefix-cache
+--no-paged-cache
+--disable-block-disk-cache
+```
+
+The PLD profile was identical except for:
+
+```text
+--enable-pld
+```
+
+PLD did not activate meaningfully with the vMLX Simple engine, so the controlled PLD test used continuous batching.
+
+### Continuous baseline
+
+A prior `vmlx-continuous` coding run produced:
+
+| Metric | Result |
+|---|---:|
+| Completion tokens | 1,014 |
+| Generation wall time | 22.082 s |
+| Wall throughput | 45.92 tok/s |
+| vMLX reported decode | 46.24 tok/s |
+
+### PLD sanity run 1
+
+| Metric | Result |
+|---|---:|
+| Completion tokens | 832 |
+| Generation wall time | 21.363 s |
+| Wall throughput | 38.95 tok/s |
+| vMLX reported decode | 39.02 tok/s |
+
+PLD startup was confirmed:
+
+```text
+[PLD] enabled — K=2 (hybrid model), d0 pre-check active, auto-tune on
+```
+
+The runtime then disabled speculative execution almost immediately:
+
+```text
+[PLD:3b1f] auto-tune — disabled (0 rounds in 1 tokens, d0 pre-check filtered all)
+```
+
+Prompt-lookup diagnostics:
+
+| Tokens observed | Coverage | hit@1 | Mean depth | Theoretical speedup |
+|---:|---:|---:|---:|---:|
+| 200 | 13.0% | 30.8% | 1.62 | 1.07x |
+| 400 | 12.8% | 31.4% | 1.75 | 1.08x |
+| 600 | 16.3% | 25.5% | 1.76 | 1.08x |
+| 800 | 19.8% | 36.1% | 2.05 | 1.17x |
+
+### PLD sanity run 2
+
+A second independent coding run reproduced the same behavior.
+
+| Metric | Result |
+|---|---:|
+| Completion tokens | 794 |
+| Generation wall time | 19.718 s |
+| Wall throughput | 40.27 tok/s |
+| vMLX reported decode | 40.37 tok/s |
+| PLD enabled | Yes |
+| PLD auto-tuner disabled | Yes |
+
+Prompt-lookup diagnostics:
+
+| Tokens observed | Coverage | hit@1 | Mean depth | Theoretical speedup |
+|---:|---:|---:|---:|---:|
+| 200 | 9.5% | 21.1% | 2.00 | 1.04x |
+| 400 | 10.8% | 20.9% | 1.67 | 1.04x |
+| 600 | 13.7% | 37.8% | 2.68 | 1.16x |
+
+No effective-tokens-per-pass result was emitted because PLD's auto-tuner disabled speculative execution before meaningful speculative rounds were performed.
+
+### Finding
+
+PLD is not useful for the current Qwen3-Coder-Next coding workload.
+
+Both PLD trials caused the runtime's own cost gate to disable speculative execution. Prompt lookup found some reusable structure, but coverage was only about 10–20%, and the theoretical opportunity was insufficient for PLD to remain enabled.
+
+Observed decode rates were:
+
+```text
+vmlx-continuous baseline     46.24 tok/s
+vmlx-continuous-pld #1      39.02 tok/s
+vmlx-continuous-pld #2      40.37 tok/s
+```
+
+Because PLD disabled itself, these figures should not be interpreted as proof that active PLD inherently causes a 13–16% slowdown. They show that PLD does not activate beneficially for this workload and provides no demonstrated performance benefit.
+
+A full 18-run PLD matrix was therefore not justified.
+
+### Decision
+
+For the current single-user coding workload:
+
+1. Keep `vmlx-simple` as the preferred performance baseline.
+2. Retain `vmlx-continuous` for experiments requiring continuous batching, caching, concurrency, or hybrid-model functionality.
+3. Do not enable PLD by default for Qwen3-Coder-Next.
+4. Revisit PLD only for workloads with substantially more repetitive or structured output, or with a different model.
+
+The benchmark harness now records:
+
+- PLD activation
+- PLD auto-tuner state
+- prompt-lookup coverage
+- hit@1
+- mean lookup depth
+- theoretical speedup
+- effective tokens/pass when emitted by vMLX

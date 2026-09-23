@@ -1,60 +1,48 @@
 #!/bin/bash
 set -euo pipefail
 
-# ----------------------------------------------------------
-# Portable CLI discovery
-# ----------------------------------------------------------
-
-# LM Studio commonly installs its CLI under ~/.lmstudio/bin.
-# Add it to PATH only if that directory exists.
 if [[ -d "$HOME/.lmstudio/bin" ]]; then
     export PATH="$HOME/.lmstudio/bin:$PATH"
 fi
 
-# Verify required commands early and give useful errors.
-for cmd in python3 curl lsof vm_stat; do
-    if ! command -v "$cmd" >/dev/null 2>&1; then
-        echo "ERROR: required command not found: $cmd"
-        exit 1
-    fi
-done
-
 BACKEND="${1:-}"
-# Process state used by cleanup.
+
 SERVER_PID=""
 LOG_PID=""
 STARTED_LMS_SERVER=0
 CLEANED=0
 
 case "$BACKEND" in
-    vmlx-simple|vmlx-continuous|lmstudio)
+    vmlx-simple|vmlx-simple-pld|vmlx-continuous|vmlx-continuous-pld|lmstudio)
         ;;
     *)
         echo "Usage:"
         echo "  ./backend-bench/scripts/bench.sh vmlx-simple [prompt]"
+        echo "  ./backend-bench/scripts/bench.sh vmlx-simple-pld [prompt]"
         echo "  ./backend-bench/scripts/bench.sh vmlx-continuous [prompt]"
+        echo "  ./backend-bench/scripts/bench.sh vmlx-continuous-pld [prompt]"
         echo "  ./backend-bench/scripts/bench.sh lmstudio [prompt]"
         exit 2
         ;;
 esac
 
-# Check backend-specific CLI only when needed.
+for cmd in python3 curl lsof vm_stat; do
+    if ! command -v "$cmd" >/dev/null 2>&1; then
+        echo "ERROR: required command '$cmd' not found."
+        exit 1
+    fi
+done
+
 if [[ "$BACKEND" == vmlx-* ]]; then
-    if [[ -n "$SERVER_PID" ]] && kill -0 "$SERVER_PID" 2>/dev/null; then
-        echo "Stopping vMLX..."
-        kill "$SERVER_PID" 2>/dev/null
-        wait "$SERVER_PID" 2>/dev/null
+    if ! command -v vmlx >/dev/null 2>&1; then
+        echo "ERROR: vMLX CLI 'vmlx' not found."
+        exit 1
     fi
 fi
 
 if [[ "$BACKEND" == "lmstudio" ]]; then
     if ! command -v lms >/dev/null 2>&1; then
         echo "ERROR: LM Studio CLI 'lms' not found."
-        echo
-        echo "Expected locations include:"
-        echo "  \$HOME/.lmstudio/bin/lms"
-        echo
-        echo "Make sure LM Studio is installed and its CLI is available."
         exit 1
     fi
 fi
@@ -71,8 +59,15 @@ PROMPT_FILE="$ROOT/prompts/${PROMPT_NAME}.txt"
 if [[ ! -f "$PROMPT_FILE" ]]; then
     echo "ERROR: unknown prompt '$PROMPT_NAME'"
     echo "Available prompts:"
-    ls "$ROOT/prompts"/*.txt | sed 's#.*/##; s#\.txt$##'
+    ls "$ROOT/prompts"/*.txt 2>/dev/null \
+        | sed 's#.*/##; s#\.txt$##'
     exit 2
+fi
+
+if [[ "$BACKEND" == vmlx-* && ! -d "$MODEL_DIR" ]]; then
+    echo "ERROR: vMLX model directory not found:"
+    echo "  $MODEL_DIR"
+    exit 1
 fi
 
 STAMP="$(date '+%Y%m%d-%H%M%S')"
@@ -87,16 +82,16 @@ cleanup() {
     (
         set +e
 
-        if [[ -n "${LOG_PID:-}" ]] && kill -0 "${LOG_PID}" 2>/dev/null; then
-            kill "${LOG_PID}" 2>/dev/null
-            wait "${LOG_PID}" 2>/dev/null
+        if [[ -n "${LOG_PID:-}" ]] && kill -0 "$LOG_PID" 2>/dev/null; then
+            kill "$LOG_PID" 2>/dev/null
+            wait "$LOG_PID" 2>/dev/null
         fi
 
         if [[ "${BACKEND:-}" == vmlx-* ]]; then
-            if [[ -n "${SERVER_PID:-}" ]] && kill -0 "${SERVER_PID}" 2>/dev/null; then
+            if [[ -n "${SERVER_PID:-}" ]] && kill -0 "$SERVER_PID" 2>/dev/null; then
                 echo "Stopping vMLX..."
-                kill "${SERVER_PID}" 2>/dev/null
-                wait "${SERVER_PID}" 2>/dev/null
+                kill "$SERVER_PID" 2>/dev/null
+                wait "$SERVER_PID" 2>/dev/null
             fi
         fi
 
@@ -114,21 +109,9 @@ cleanup() {
 
 trap cleanup EXIT INT TERM
 
-if [[ ! -f "$PROMPT_FILE" ]]; then
-    echo "ERROR: prompt not found:"
-    echo "  $PROMPT_FILE"
-    exit 1
-fi
-
-PROMPT="$(cat "$PROMPT_FILE")"
-
 echo "========================================"
 echo " Local LLM Backend Bench — $BACKEND"
 echo "========================================"
-
-# ----------------------------------------------------------
-# Environment metadata
-# ----------------------------------------------------------
 
 {
     echo "date=$(date -Iseconds)"
@@ -139,10 +122,6 @@ echo "========================================"
 } > "$RUN_DIR/environment.txt"
 
 vm_stat > "$RUN_DIR/vm-stat.before.txt"
-
-# ----------------------------------------------------------
-# Backend startup
-# ----------------------------------------------------------
 
 LOAD_START="$(
 python3 - <<'PY'
@@ -162,7 +141,13 @@ if [[ "$BACKEND" == vmlx-* ]]; then
         exit 1
     fi
 
-    TEMPLATE="$(cat "$MODEL_DIR/chat_template.jinja")"
+    TEMPLATE="$MODEL_DIR/chat_template.jinja"
+
+    if [[ ! -f "$TEMPLATE" ]]; then
+        echo "ERROR: chat template not found:"
+        echo "  $TEMPLATE"
+        exit 1
+    fi
 
     VMLX_MODE_ARGS=()
 
@@ -170,6 +155,13 @@ if [[ "$BACKEND" == vmlx-* ]]; then
         vmlx-simple)
             VMLX_MODE_ARGS=(
                 --no-continuous-batching
+            )
+            ;;
+
+        vmlx-simple-pld)
+            VMLX_MODE_ARGS=(
+                --no-continuous-batching
+                --enable-pld
             )
             ;;
 
@@ -182,6 +174,17 @@ if [[ "$BACKEND" == vmlx-* ]]; then
                 --disable-block-disk-cache
             )
             ;;
+
+        vmlx-continuous-pld)
+            VMLX_MODE_ARGS=(
+                --continuous-batching
+                --max-num-seqs 1
+                --disable-prefix-cache
+                --no-paged-cache
+                --disable-block-disk-cache
+                --enable-pld
+            )
+            ;;
     esac
 
     echo "Starting vMLX profile: $BACKEND"
@@ -192,7 +195,7 @@ if [[ "$BACKEND" == vmlx-* ]]; then
         --max-prompt-tokens 65536 \
         "${VMLX_MODE_ARGS[@]}" \
         --reasoning-parser none \
-        --chat-template "$TEMPLATE" \
+        --chat-template "$(cat "$TEMPLATE")" \
         --chat-template-kwargs '{"enable_thinking": false}' \
         --default-temperature 0.3 \
         --default-top-p 0.8 \
@@ -222,6 +225,7 @@ if [[ "$BACKEND" == vmlx-* ]]; then
 
     if [[ "$READY" != "1" ]]; then
         echo "ERROR: vMLX failed to become ready."
+        tail -80 "$RUN_DIR/backend.log"
         exit 1
     fi
 
@@ -233,7 +237,6 @@ else
 
     echo "Preparing LM Studio..."
 
-    # Avoid contaminating the benchmark with an already-loaded model.
     if lms ps 2>/dev/null | grep -qi 'qwen3-coder-next'; then
         echo "ERROR: Qwen3-Coder-Next is already loaded in LM Studio."
         echo "Unload it first with:"
@@ -258,7 +261,6 @@ else
         --gpu max \
         --identifier "$API_MODEL"
 
-    # Capture inference statistics.
     lms log stream \
         --source model \
         --filter output \
@@ -286,14 +288,9 @@ PY
 
 echo "Backend ready in ${LOAD_SECONDS}s"
 
-curl -fsS "$BASE_URL/models" \
-    > "$RUN_DIR/models.json"
+curl -fsS "$BASE_URL/models" > "$RUN_DIR/models.json"
 
 vm_stat > "$RUN_DIR/vm-stat.loaded.txt"
-
-# ----------------------------------------------------------
-# Build identical API request
-# ----------------------------------------------------------
 
 python3 - "$PROMPT_FILE" "$API_MODEL" "$RUN_DIR/request.json" <<'PY'
 import json
@@ -320,10 +317,6 @@ request = {
 
 out.write_text(json.dumps(request, indent=2) + "\n")
 PY
-
-# ----------------------------------------------------------
-# Inference
-# ----------------------------------------------------------
 
 echo
 echo "Running generation..."
@@ -369,12 +362,7 @@ if [[ "$HTTP_CODE" != "200" ]]; then
     exit 1
 fi
 
-# Give LM Studio logger a moment to flush.
 sleep 1
-
-# ----------------------------------------------------------
-# Summarize
-# ----------------------------------------------------------
 
 python3 - \
     "$RUN_DIR" \
@@ -431,7 +419,10 @@ backend_log = (
     else ""
 )
 
-# vMLX exact decode reporting.
+# ----------------------------------------------------------
+# vMLX decode metrics
+# ----------------------------------------------------------
+
 vmlx_matches = re.findall(
     r"Chat completion.*?:\s*(\d+)\s+tokens in\s+([0-9.]+)s",
     backend_log
@@ -446,7 +437,6 @@ if vmlx_matches:
     if seconds:
         vmlx_decode_tps = round(tokens / seconds, 2)
 
-# Generic backend tok/s readings, useful especially for LM Studio logs.
 backend_tps = [
     float(x)
     for x in re.findall(
@@ -455,6 +445,89 @@ backend_tps = [
         flags=re.I,
     )
 ]
+
+# ----------------------------------------------------------
+# PLD diagnostics
+# ----------------------------------------------------------
+
+pld_enabled = bool(
+    re.search(
+        r"\[PLD\]\s+enabled",
+        backend_log,
+        flags=re.I,
+    )
+)
+
+pld_auto_tune_disabled = bool(
+    re.search(
+        r"\[PLD:[^\]]+\].*auto-tune\s+[—-]\s+disabled",
+        backend_log,
+        flags=re.I,
+    )
+)
+
+pld_auto_tune_enabled = bool(
+    re.search(
+        r"\[PLD:[^\]]+\].*auto-tune\s+[—-]\s+enabled",
+        backend_log,
+        flags=re.I,
+    )
+)
+
+pld_lookup_stats = re.findall(
+    r"\[PLD\]\s+tokens=(\d+)\s+"
+    r"coverage=([0-9.]+)%\s+"
+    r"hit@1=([0-9.]+)%\s+"
+    r"mean_depth=([0-9.]+)\s+"
+    r"theoretical_speedup=([0-9.]+)x",
+    backend_log,
+    flags=re.I,
+)
+
+pld_final_lookup_stats = None
+
+if pld_lookup_stats:
+    tokens, coverage, hit1, mean_depth, theoretical = pld_lookup_stats[-1]
+
+    pld_final_lookup_stats = {
+        "tokens_observed": int(tokens),
+        "coverage_pct": float(coverage),
+        "hit_at_1_pct": float(hit1),
+        "mean_depth": float(mean_depth),
+        "theoretical_speedup": float(theoretical),
+    }
+
+pld_lookup_history = [
+    {
+        "tokens_observed": int(tokens),
+        "coverage_pct": float(coverage),
+        "hit_at_1_pct": float(hit1),
+        "mean_depth": float(mean_depth),
+        "theoretical_speedup": float(theoretical),
+    }
+    for tokens, coverage, hit1, mean_depth, theoretical
+    in pld_lookup_stats
+]
+
+pld_eff_tokens_per_pass = [
+    float(x)
+    for x in re.findall(
+        r"eff(?:ective)?\s+tok(?:ens)?/pass"
+        r"(?:\s*[:=]\s*|\s+)"
+        r"([0-9]+(?:\.[0-9]+)?)",
+        backend_log,
+        flags=re.I,
+    )
+]
+
+pld_effective_gain = None
+
+if pld_eff_tokens_per_pass:
+    pld_effective_gain = pld_eff_tokens_per_pass[-1]
+
+# ----------------------------------------------------------
+# Output
+# ----------------------------------------------------------
 
 (run / "answer.md").write_text(answer + "\n")
 
@@ -469,6 +542,15 @@ summary = {
     "wall_completion_tokens_per_second": wall_decode_tps,
     "vmlx_reported_decode_tps": vmlx_decode_tps,
     "backend_reported_tps_candidates": backend_tps,
+
+    "pld_enabled": pld_enabled,
+    "pld_auto_tune_enabled": pld_auto_tune_enabled,
+    "pld_auto_tune_disabled": pld_auto_tune_disabled,
+    "pld_final_lookup_stats": pld_final_lookup_stats,
+    "pld_lookup_history": pld_lookup_history,
+    "pld_eff_tokens_per_pass": pld_eff_tokens_per_pass,
+    "pld_final_eff_tokens_per_pass": pld_effective_gain,
+
     "finish_reason": choice.get("finish_reason"),
     "answer_chars": len(answer),
 }
