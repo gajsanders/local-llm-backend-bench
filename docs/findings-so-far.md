@@ -345,3 +345,39 @@ The benchmark harness now records:
 - mean lookup depth
 - theoretical speedup
 - effective tokens/pass when emitted by vMLX
+
+Qwen3.5-122B-A10B-JANG_2S
+- bundle loads
+- first forward pass fails with gather_qmm shape mismatch
+- issue filed: jjang-ai/vmlx#280
+
+Nemotron-3-Super-120B-A12B-JANG_4M
+- vmlx 1.6.64
+- 120.8B parameters
+- 62.6 GB JANG 4.1-bit bundle
+- mlx-lm MoEGate quantization bug blocked loading
+- upstream no-op MoEGate.to_quantized() patch applied locally
+- server then started successfully
+- first 128-token generation succeeded
+- native MTP disabled for smoke test
+
+
+### Nemotron 120B tool-calling smoke test
+
+`JANG/Nemotron-3-Super-120B-A12B-JANG_4M` successfully emitted a valid OpenAI-style function call under vMLX 1.6.64 using:
+
+- `--enable-auto-tool-choice`
+- `--tool-call-parser nemotron`
+- native MTP disabled
+- thinking disabled
+
+Prompt requested current Amsterdam weather and explicitly instructed the model to use the available tool rather than guess.
+
+Result:
+
+- `finish_reason: tool_calls`
+- `content: null`
+- tool: `get_weather`
+- arguments: `{"city":"Amsterdam"}`
+
+This confirms the model is viable for further OpenCode / reviewer-agent testing, not just plain text generation.
