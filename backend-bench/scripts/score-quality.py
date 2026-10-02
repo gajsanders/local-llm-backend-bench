@@ -13,6 +13,10 @@ manifest = json.loads(
 
 rows = []
 
+# NOTE: Quality scoring is task-specific and prompt-dependent.
+# Coding, JSON, and architecture scores are NOT a common cross-task quality scale.
+# They should not be compared directly across prompt types.
+
 
 def coding_score(text):
     lower = text.lower()

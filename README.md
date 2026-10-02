@@ -29,13 +29,15 @@ The vMLX model path can be overridden with `MODEL_DIR`.
 
 ## What the benchmark measures
 
-- Cold model load time
-- Generation wall time
-- Completion throughput
+- **Cold model load time**: Time from starting the backend server to first token generation (no warm-up)
+- **Generation wall time**: Time for a single inference request once the model is loaded
+- Completion throughput (tokens per second)
 - Prompt and completion token counts
 - Output length
 - Strict JSON compliance
 - Simple deterministic task-quality checks
+
+**Important:** The benchmark does NOT perform warm-up inference before cold-load measurements, as that would change the quantity being measured. Cold-load timing measures actual startup latency; generation timing measures inference throughput once warmed up.
 
 ## Benchmark tasks
 
@@ -86,6 +88,8 @@ Total:
 3 prompts × 2 backends × 3 repetitions = 18 runs
 ```
 
+**Note:** These results use approximately n=3 repetitions per condition and should be treated as **preliminary/exploratory** rather than statistically conclusive. Claims of statistical significance are not supported without proper inferential testing, and n is currently too small for such tests. Results should be interpreted as early indicators rather than definitive conclusions.
+
 ### Median generation throughput
 
 | Task | vMLX | LM Studio | vMLX advantage |
@@ -102,7 +106,9 @@ Total:
 | Architecture completeness | 94.4% | 88.9% |
 | JSON compliance | 100% | 100% |
 
-The quality checks are deliberately simple and deterministic. They should be treated as task-compliance checks, not as a general model intelligence benchmark.
+The quality checks are deliberately simple and deterministic. They should be treated as **task-compliance checks**, not as a general model intelligence benchmark.
+
+**Important:** Coding, JSON, and architecture quality scores are task-specific checks. They are not a common cross-task quality scale and should not be compared directly across prompt types.
 
 The architecture difference is based on a small sample and should not be treated as statistically meaningful.
 
@@ -111,6 +117,8 @@ The architecture difference is based on a small sample and should not be treated
 On this benchmark, vMLX delivered approximately **11–15% higher median generation throughput** than LM Studio with **no demonstrated loss of output quality**.
 
 Cold loading was also generally faster with vMLX, although load time showed more run-to-run variation than generation throughput.
+
+**Note on methodology:** This benchmark measures cold-load startup time and single-request generation performance. Results are preliminary (n=3) and exploratory rather than statistically conclusive.
 
 ## Current Findings
 
@@ -124,6 +132,8 @@ single-request engine is the current best baseline** for Qwen3-Coder-Next MLX
   decode throughput** than continuous batching when cache reuse was disabled.
 - No meaningful output-quality disadvantage was observed for vMLX in the
   current deterministic task checks.
+
+**Note on methodology:** All benchmark results use approximately n=3 repetitions per condition and should be treated as **preliminary/exploratory** rather than statistically conclusive. Dispersion measures (e.g., IQR) are provided where the underlying data supports them.
 
 See [Benchmark Findings So Far](docs/findings-so-far.md) for the full results
 and methodology.
@@ -249,6 +259,39 @@ The benchmark intentionally keeps inference-engine comparison separate from:
 - orchestration layers
 
 Those introduce additional compatibility and prompting variables that can obscure raw backend performance.
+
+## Methodology notes
+
+### Small-sample limitations
+
+Results are based on approximately n=3 repetitions per condition. These should be treated as **preliminary/exploratory** rather than statistically conclusive. Claims of statistical significance are not supported without proper inferential testing.
+
+### Quality metrics
+
+Quality scores (coding, JSON, architecture) are **task-specific compliance checks**, not a common cross-task quality scale. They should not be compared directly across prompt types.
+
+Architecture scoring relies on keyword/checklist-based detection and has known limitations:
+- May miss nuanced architectural issues
+- May flag superficial mentions without deep understanding
+- Scores are prompt-specific, not absolute quality measures
+
+### vMLX startup semantics
+
+The benchmark distinguishes between:
+- **Cold-load timing**: Model loading from disk to first token generation
+- **Warm generation timing**: Subsequent inference once the model is loaded
+
+No warm-up inference is performed before cold-load measurements, as that would change what is being measured.
+
+The readiness check confirms the expected model ID is exposed via the `/v1/models` endpoint.
+
+### Timing semantics
+
+All reported load times are **cold-load measurements** (no warm-up). Generation times are measured for single inference requests after the model is loaded. This distinction is important because:
+- Cold-load time includes model disk I/O, memory allocation, and initial compilation
+- Generation time measures inference throughput once the model is in memory
+
+Results should not be compared with benchmarks that perform warm-up runs, as those measure different quantities.
 
 ## Planned experiments
 

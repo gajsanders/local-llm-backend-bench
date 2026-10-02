@@ -36,11 +36,19 @@ Each benchmark task was run three times per backend.
 | Architecture completeness | 94.4% | 88.9% |
 | JSON compliance | 100% | 100% |
 
-The quality scorer is primarily a structural/compliance test and should
+The quality scorer is primarily a **structural/compliance test** and should
 not be interpreted as a general model intelligence benchmark.
 
-The architecture difference is based on a small sample and should not
+**Important:** Coding, JSON, and architecture quality scores are **task-specific checks**. They are not a common cross-task quality scale and should not be compared directly across prompt types.
+
+The architecture difference is based on a small sample (n=3) and should not
 be treated as statistically meaningful.
+
+**Limitations of architecture scoring:**
+- Relies on keyword/checklist-based detection
+- May miss nuanced architectural issues that don't use expected terminology
+- May flag superficial mentions without deep understanding
+- Scores are prompt-specific, not absolute quality measures
 
 ## Initial conclusion
 
@@ -50,3 +58,5 @@ of answer quality.
 
 Cold model loading was also generally faster with vMLX, although load
 time showed more run-to-run variation than generation throughput.
+
+**Note on methodology:** All benchmark results use approximately n=3 repetitions per condition and should be treated as **preliminary/exploratory** rather than statistically conclusive. Dispersion measures (e.g., IQR) are provided where the underlying data supports them.

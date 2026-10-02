@@ -209,9 +209,11 @@ if [[ "$BACKEND" == vmlx-* ]]; then
     READY=0
 
     for _ in $(seq 1 180); do
-        if curl -fsS "$BASE_URL/models" >/dev/null 2>&1; then
-            READY=1
-            break
+        if curl -fsS "$BASE_URL/models" > "$RUN_DIR/models.check.json" 2>&1; then
+            if grep -q "\"id\": \"$API_MODEL\"" "$RUN_DIR/models.check.json" 2>/dev/null; then
+                READY=1
+                break
+            fi
         fi
 
         if ! kill -0 "$SERVER_PID" 2>/dev/null; then
@@ -224,7 +226,9 @@ if [[ "$BACKEND" == vmlx-* ]]; then
     done
 
     if [[ "$READY" != "1" ]]; then
-        echo "ERROR: vMLX failed to become ready."
+        echo "ERROR: vMLX failed to expose expected model ($API_MODEL)."
+        echo "Available models:"
+        cat "$RUN_DIR/models.check.json" 2>/dev/null || echo "(no response)"
         tail -80 "$RUN_DIR/backend.log"
         exit 1
     fi

@@ -14,7 +14,14 @@ The benchmark currently uses three prompt types:
 - `coding`
 - `json`
 
-Each reported comparison uses three repetitions per prompt/backend or prompt/profile pair and reports medians.
+Each reported comparison uses approximately three repetitions per prompt/backend or prompt/profile pair and reports medians.
+
+**Important methodology notes:**
+
+- Results use approximately n=3 repetitions per condition and should be treated as **preliminary/exploratory** rather than statistically conclusive.
+- Claims of statistical significance are not supported without proper inferential testing; n is currently too small for such tests.
+- Where the underlying data has repetitions available, IQR (interquartile range) dispersion is reported alongside medians.
+- Quality scores are task-specific compliance checks, not a common cross-task quality scale (see below).
 
 ---
 
@@ -56,11 +63,19 @@ Cold model loading was also generally faster with vMLX, particularly in the codi
 | Architecture | 94.4% | 88.9% |
 | JSON | 100% | 100% |
 
-These are deterministic task-compliance checks rather than general intelligence scores.
+These are **deterministic task-compliance checks** rather than general intelligence scores.
 
 The benchmark did not show evidence of a meaningful output-quality disadvantage from using vMLX.
 
-The small architecture difference should not be treated as statistically significant given the sample size.
+**Important:** Coding, JSON, and architecture quality scores are **task-specific checks**. They are not a common cross-task quality scale and should not be compared directly across prompt types.
+
+The architecture difference is based on a small sample (n=3) and should not be treated as statistically significant.
+
+**Limitations of architecture scoring:**
+- Relies on keyword/checklist-based detection
+- May miss nuanced architectural issues that don't use expected terminology
+- May flag superficial mentions without deep understanding
+- Scores are prompt-specific, not absolute quality measures
 
 ### Finding
 
@@ -100,6 +115,12 @@ The cache layers were deliberately disabled so that the experiment measured the 
 | Coding | vmlx-continuous | 14.479 s | 22.082 s | 43.130 | 43.210 |
 | JSON | vmlx-simple | 14.547 s | 19.073 s | 43.170 | 43.260 |
 | JSON | vmlx-continuous | 14.506 s | 18.333 s | 43.350 | 43.460 |
+
+**Note on timing semantics:**
+- **Cold-load time**: Model loading from disk to first token generation
+- **Warm generation time**: Subsequent inference once the model is loaded
+
+The benchmark does NOT perform warm-up inference before cold-load measurements, as that would change what is being measured.
 
 ### Relative decode performance
 
@@ -336,7 +357,7 @@ For the current single-user coding workload:
 3. Do not enable PLD by default for Qwen3-Coder-Next.
 4. Revisit PLD only for workloads with substantially more repetitive or structured output, or with a different model.
 
-The benchmark harness now records:
+**Note on methodology:** PLD results shown above are based on n=2 trials. The benchmark harness now records:
 
 - PLD activation
 - PLD auto-tuner state
@@ -381,3 +402,5 @@ Result:
 - arguments: `{"city":"Amsterdam"}`
 
 This confirms the model is viable for further OpenCode / reviewer-agent testing, not just plain text generation.
+
+repository-style tool argument generation also passed,
